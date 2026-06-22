@@ -4,9 +4,10 @@ import numpy as np
 def configure(context):
     context.config("random_seed")
     context.stage("data.hts.selected")
+    context.stage("data.hts.selected", dict(weekday = "any"), alias = "hts_reference")
 
-def get_commuting_distance(df_persons, df_trips, activity_type, random):
-    if "euclidean_distance" in df_trips:
+def get_commuting_distance(df_persons, df_reference_trips, activity_type, random):
+    if "euclidean_distance" in df_reference_trips:
         distance_slot = "euclidean_distance"
         distance_factor = 1.0
     else:
@@ -14,9 +15,9 @@ def get_commuting_distance(df_persons, df_trips, activity_type, random):
         distance_factor = 1.0 # / 1.3
 
     # Add commuting distances
-    df_commute_distance = df_trips[
-        ((df_trips["preceding_purpose"] == "home") & (df_trips["following_purpose"] == activity_type)) |
-        ((df_trips["preceding_purpose"] == activity_type) & (df_trips["following_purpose"] == "home"))
+    df_commute_distance = df_reference_trips[
+        ((df_reference_trips["preceding_purpose"] == "home") & (df_reference_trips["following_purpose"] == activity_type)) |
+        ((df_reference_trips["preceding_purpose"] == activity_type) & (df_reference_trips["following_purpose"] == "home"))
     ].drop_duplicates("person_id", keep = "first")[["person_id", distance_slot]].rename(columns = { distance_slot: "commute_distance" })
 
     df_persons = pd.merge(df_persons, df_commute_distance, on = "person_id", how = "left")
@@ -57,10 +58,11 @@ def get_commuting_distance(df_persons, df_trips, activity_type, random):
     return df_persons
 
 def execute(context):
-    df_households, df_persons, df_trips = context.stage("data.hts.selected")
+    df_households, df_persons, _ = context.stage("data.hts.selected")
+    _, _, df_reference_trips = context.stage("hts_reference")
     random = np.random.default_rng(context.config("random_seed"))
 
     return dict(
-        work = get_commuting_distance(df_persons, df_trips, "work", random),
-        education = get_commuting_distance(df_persons, df_trips, "education", random)
+        work = get_commuting_distance(df_persons, df_reference_trips, "work", random),
+        education = get_commuting_distance(df_persons, df_reference_trips, "education", random)
     )
