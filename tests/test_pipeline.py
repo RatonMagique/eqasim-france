@@ -1,6 +1,8 @@
 import synpp
 import os
 import pandas as pd
+import pytest
+
 
 def run_population(data_path, tmpdir, hts, update = {}, stages = []):
     cache_path = str(tmpdir.mkdir("cache"))
@@ -51,43 +53,73 @@ def run_population(data_path, tmpdir, hts, update = {}, stages = []):
 
     return { "output_path": output_path }
 
+
+def run_hts_output(data_path, tmpdir, hts, update = {}):
+    cache_path = str(tmpdir.mkdir("cache"))
+    output_path = str(tmpdir.mkdir("output"))
+
+    config = dict(
+        data_path = data_path, output_path = output_path,
+        regions = [10, 11], sampling_rate = 1.0, hts = hts,
+        random_seed = 1000, processes = 1,
+        output_prefix = "test_"
+    )
+    config.update(update)
+
+    synpp.run([
+        dict(descriptor = "data.hts.output"),
+    ], config, working_directory = cache_path)
+
+    return {
+        "persons": pd.read_csv("%s/test_hts_persons.csv" % output_path, sep = ";"),
+        "trips": pd.read_csv("%s/test_hts_trips.csv" % output_path, sep = ";")
+    }
+
+
 def test_population_with_entd(data_path, tmpdir):
     run_population(data_path, tmpdir, "entd")
+
 
 def test_population_with_egt(data_path, tmpdir):
     run_population(data_path, tmpdir, "egt")
 
+
 def test_population_with_mode_choice(data_path, tmpdir):
     run_population(data_path, tmpdir, "entd", { "mode_choice": True })
 
+
 def test_population_with_fleet_sample(data_path, tmpdir):
-    run_population(data_path, tmpdir, "entd", { 
+    run_population(data_path, tmpdir, "entd", {
         "vehicles_method": "fleet_sample",
         "vehicles_year": 2021
     })
 
+
 def test_population_with_bhepop2_income(data_path, tmpdir):
-    run_population(data_path, tmpdir, "egt", { 
+    run_population(data_path, tmpdir, "egt", {
         "income_assignation_method": "bhepop2"
     })
 
+
 def test_population_with_urban_type(data_path, tmpdir):
-    run_population(data_path, tmpdir, "entd", { 
-        "use_urban_type": True, 
+    run_population(data_path, tmpdir, "entd", {
+        "use_urban_type": True,
         "matching_attributes": [
             "urban_type", "*default*"
         ],
         "matching_minimum_observations": 5
     })
 
+
 def test_population_with_urban_type_and_egt(data_path, tmpdir):
-    run_population(data_path, tmpdir, "egt", { 
-        "use_urban_type": True, 
+    run_population(data_path, tmpdir, "egt", {
+        "use_urban_type": True,
         "matching_attributes": [
             "urban_type", "*default*"
         ],
         "matching_minimum_observations": 5
     })
+
 
 def test_population_with_motorcycles(data_path, tmpdir):
     run_population(data_path, tmpdir, "entd", {
@@ -96,13 +128,15 @@ def test_population_with_motorcycles(data_path, tmpdir):
         "vehicles_year": 2021
     })
 
+
 def test_population_with_secondary_activity_force_model(data_path, tmpdir):
-    run_population(data_path, tmpdir, "entd", { 
+    run_population(data_path, tmpdir, "entd", {
         "secondary_activities": dict(chain_solver = "force_model", maximum_iterations = 10)
     })
 
+
 def test_population_with_location_information(data_path, tmpdir):
-    output_path = run_population(data_path, tmpdir, "entd", { 
+    output_path = run_population(data_path, tmpdir, "entd", {
         "output_location_ids": True
     }, [
         dict(descriptor = "synthesis.locations.output.home"),
@@ -124,8 +158,9 @@ def test_population_with_location_information(data_path, tmpdir):
     os.path.isfile("{}/ile_de_france_secondary_locations.gpkg".format(output_path))
     os.path.isfile("{}/ile_de_france_buildings.gpkg".format(output_path))
 
+
 def test_population_with_census_attributes(data_path, tmpdir):
-    output_path = run_population(data_path, tmpdir, "entd", { 
+    output_path = run_population(data_path, tmpdir, "entd", {
         "census_attributes": [
             { "name": "household_type", "raw": "MODV", "scope": "household" },
             { "name": "rooms", "raw": "NBPI" },
@@ -137,3 +172,20 @@ def test_population_with_census_attributes(data_path, tmpdir):
 
     df = pd.read_csv("%s/ile_de_france_households.csv" % output_path, sep = ";", nrows = 2)
     assert "household_type" in df
+
+
+def test_weekday_selection_accepts_named_day_lists(data_path, tmpdir):
+    selected_days = ["saturday", "sunday"]
+    output = run_hts_output(data_path, tmpdir, "egt", {
+        "weekday": selected_days
+    })
+
+    assert set(output["persons"]["weekday"].dropna().unique()) <= set(selected_days)
+    assert set(output["trips"]["person_id"].unique()) <= set(output["persons"]["person_id"].unique())
+
+
+def test_entd_weekday_selection_rejects_empty_subset(data_path, tmpdir):
+    with pytest.raises(RuntimeError, match = "No HTS observations available for weekday selection"):
+        run_hts_output(data_path, tmpdir, "entd", {
+            "weekday": ["nonexistent_day"]
+        })

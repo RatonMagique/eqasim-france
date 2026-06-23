@@ -3,7 +3,7 @@ import numpy as np
 
 """
 This stage filters out EGT observations which live or work outside of
-Île-de-France.
+Ile-de-France.
 """
 
 def configure(context):
@@ -12,12 +12,12 @@ def configure(context):
 
     context.config("filter_hts",True)
 def execute(context):
-    filter_emp = context.config("filter_hts") 
+    filter_emp = context.config("filter_hts")
     df_codes = context.stage("data.spatial.codes")
 
     df_households, df_persons, df_trips = context.stage("data.hts.emp.cleaned")
 
-    if filter_emp : 
+    if filter_emp :
         # Filter for non-residents
         requested_departments = df_codes["departement_id"].unique()
         f = df_persons["departement_id"].astype(str).isin(requested_departments) # pandas bug!
@@ -38,7 +38,7 @@ def execute(context):
 
     # Finish up
     df_households = df_households[hts.HOUSEHOLD_COLUMNS + ["urban_type", "income_class"]]
-    df_persons = df_persons[hts.PERSON_COLUMNS]
+    df_persons = df_persons[hts.PERSON_COLUMNS + ["weekday"]]
     df_trips = df_trips[hts.TRIP_COLUMNS + ["routed_distance"]]
 
     hts.check(df_households, df_persons, df_trips)

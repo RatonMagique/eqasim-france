@@ -41,6 +41,16 @@ MODES_MAP = [
 #    ("9", "pt") # Other
 ]
 
+WEEKDAY_MAP = {
+    "lundi": "monday",
+    "mardi": "tuesday",
+    "mercredi": "wednesday",
+    "jeudi": "thursday",
+    "vendredi": "friday",
+    "samedi": "saturday",
+    "dimanche": "sunday"
+}
+
 def convert_time(x):
     return np.dot(np.array(x.split(":"), dtype = float), [3600.0, 60.0, 1.0])
 
@@ -51,14 +61,6 @@ def execute(context):
     df_persons = pd.DataFrame(df_tcm_individu, copy = True).rename(columns={"ident_ind":"IDENT_IND", "ident_men":"IDENT_MEN"})
     df_households = pd.DataFrame(df_tcm_menage, copy = True).rename(columns={ "ident_men":"IDENT_MEN"})
     df_trips = pd.DataFrame(df_deploc, copy = True)
-
-    # Keep only households / persons that were surveyed during weekday.
-    valid_households = df_individu.loc[
-        ~df_individu["MDATE_jour"].isin(("samedi", "dimanche")), "IDENT_MEN"
-    ]
-    df_persons = df_persons.loc[df_persons["IDENT_MEN"].isin(valid_households)].copy()
-    df_households = df_households.loc[df_households["IDENT_MEN"].isin(valid_households)].copy()
-    df_trips = df_trips.loc[df_trips["IDENT_MEN"].isin(valid_households)].copy()
 
     # Merge in additional information from EMP
     df_households = pd.merge(df_households, df_menage[[
@@ -76,8 +78,10 @@ def execute(context):
     df_persons["is_kish"] = df_persons["IDENT_IND"].isin(df_tcm_individu_kish["ident_ind"])
 
     df_persons = pd.merge(df_persons, df_individu[[
-        "IDENT_IND", "BPERMIS", "BCARTABON","ETUDIE","pond_indC"
+        "IDENT_IND", "BPERMIS", "BCARTABON", "ETUDIE", "pond_indC", "MDATE_jour"
     ]], on = "IDENT_IND", how = "left")
+
+    df_persons["weekday"] = df_persons["MDATE_jour"].str.lower().replace(WEEKDAY_MAP).astype("category")
 
     # Transform original IDs to integer (they are hierarchichal)
     df_persons["emp_person_id"] = df_persons["IDENT_IND"].astype(int)
@@ -193,7 +197,7 @@ def execute(context):
 
     # Further trip attributes
     df_trips["routed_distance"] = df_trips["MDISTTOT_fin"] * 1000.0
-    df_trips["routed_distance"] = df_trips["routed_distance"].fillna(0.0) # This should be just one within Île-de-France
+    df_trips["routed_distance"] = df_trips["routed_distance"].fillna(0.0) # This should be just one within Ile-de-France
 
     # Trip flags
     df_trips = hts.compute_first_last(df_trips)
