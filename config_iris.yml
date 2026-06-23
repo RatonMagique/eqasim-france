@@ -2,7 +2,7 @@
 ## based on the synpp package
 
 # This is the path to a directory where the pipeline can store temporary data
-working_directory: ../cache
+working_directory: /path/to/my/cache
 
 # This section defines which parts of the pipeline should be run
 run:
@@ -84,19 +84,20 @@ config:
         '773730402', '772140000', '771080303'
         ]
   # Some general configuration
-  processes: 40
+  processes: 4
 
   # Define whether to use ENTD or EGT as the household travel survey (HTS)
   hts: entd
+  weekday: any
 
   # Define sampling rate and random seed for the output population
   sampling_rate: 0.001
   random_seed: 1234
 
   # Paths to the input data and where the output should be stored
-  data_path: ../data
-  output_path: ../output
-  output_prefix: 204_iris_
+  data_path: path/to/my/data
+  output_path: path
+  output_prefix: 204_iris
 
   # Only interesting if you run the simulation
   java_memory: 14G
