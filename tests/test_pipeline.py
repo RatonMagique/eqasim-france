@@ -174,6 +174,16 @@ def test_population_with_census_attributes(data_path, tmpdir):
     assert "household_type" in df
 
 
+def test_weekday_selection_accepts_weekend_alias(data_path, tmpdir):
+    selected_days = ["saturday", "sunday"]
+    output = run_hts_output(data_path, tmpdir, "egt", {
+        "weekday": "weekend"
+    })
+
+    assert set(output["persons"]["weekday"].dropna().unique()) <= set(selected_days)
+    assert set(output["trips"]["person_id"].unique()) <= set(output["persons"]["person_id"].unique())
+
+
 def test_weekday_selection_accepts_named_day_lists(data_path, tmpdir):
     selected_days = ["saturday", "sunday"]
     output = run_hts_output(data_path, tmpdir, "egt", {
