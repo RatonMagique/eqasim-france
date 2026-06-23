@@ -28,7 +28,7 @@ Q_TCM_INDIVIDU_COLUMNS = [
     "PONDV1", "CS24", "SEXE", "DEP", "SITUA",
 ]
 
-K_DEPLOC_COLUMNS = [
+K_DEPLOC_REQUIRED_COLUMNS = [
     "IDENT_IND", "V2_MMOTIFDES", "V2_MMOTIFORI",
     "V2_TYPJOUR", "V2_MORIHDEP", "V2_MDESHARR", "V2_MDISTTOT",
     "IDENT_JOUR", "V2_MTP",
@@ -36,12 +36,33 @@ K_DEPLOC_COLUMNS = [
     "PONDKI"
 ]
 
-K_MOBILITE_COLUMNS = [
+K_DEPLOC_OPTIONAL_COLUMNS = [
+    "V2_JOUR_DEP"
+]
+
+K_MOBILITE_REQUIRED_COLUMNS = [
     "IDENT_IND", "V2_JOURSEMMOB"
 ]
 
+K_MOBILITE_OPTIONAL_COLUMNS = [
+    "V2_MDATEDEP", "V2_MDATESAMDEP", "V2_MDATEDIMDEP"
+]
+
+
+def _available_columns(path, sep = ';', encoding = 'latin1'):
+    return list(pd.read_csv(path, sep = sep, encoding = encoding, nrows = 0).columns)
+
+
+def read_csv_with_optional_columns(path, required_columns, optional_columns = None, sep = ';', encoding = 'latin1', dtype = None):
+    optional_columns = optional_columns or []
+    available_columns = set(_available_columns(path, sep = sep, encoding = encoding))
+    usecols = list(required_columns) + [column for column in optional_columns if column in available_columns]
+    return pd.read_csv(path, sep = sep, encoding = encoding, usecols = usecols, dtype = dtype)
+
+
 def configure(context):
     context.config("data_path")
+
 
 def execute(context):
     df_individu = pd.read_csv(
@@ -68,18 +89,19 @@ def execute(context):
         dtype = { "DEP": str }
     )
 
-    df_deploc = pd.read_csv(
+    df_deploc = read_csv_with_optional_columns(
         "%s/entd_2008/K_deploc.csv" % context.config("data_path"),
-        sep = ";", encoding = "latin1", usecols = K_DEPLOC_COLUMNS,
+        K_DEPLOC_REQUIRED_COLUMNS, K_DEPLOC_OPTIONAL_COLUMNS,
         dtype = { "DEP": str, "V2_MTP": str }
     )
 
-    df_mobilite = pd.read_csv(
+    df_mobilite = read_csv_with_optional_columns(
         "%s/entd_2008/K_mobilite.csv" % context.config("data_path"),
-        sep = ";", encoding = "latin1", usecols = K_MOBILITE_COLUMNS
+        K_MOBILITE_REQUIRED_COLUMNS, K_MOBILITE_OPTIONAL_COLUMNS
     )
 
     return df_individu, df_tcm_individu, df_menage, df_tcm_menage, df_deploc, df_mobilite
+
 
 def validate(context):
     for name in ("Q_individu.csv", "Q_tcm_individu.csv", "Q_menage.csv", "Q_tcm_menage_0.csv", "K_deploc.csv", "K_mobilite.csv"):

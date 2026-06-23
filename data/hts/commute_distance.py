@@ -39,7 +39,13 @@ def get_commuting_distance(df_persons, df_trips, df_reference_persons, df_refere
         raise ValueError("No commute-distance observations available for '%s' in either the selected sample or the full HTS reference." % activity_type)
 
     # Add commuting distances from the selected sample when available.
-    df_persons = pd.merge(df_persons, df_commute_distance[["person_id", "commute_distance"]], on = "person_id", how = "left")
+    #
+    # The distribution above can contain multiple trips per person. That is
+    # useful for sampling, but the returned table must stay person-level so
+    # downstream merges remain one-to-one. Keep the first observed commute
+    # distance per person, matching the analysis code.
+    df_commute_distance_lookup = df_commute_distance[["person_id", "commute_distance"]].drop_duplicates("person_id", keep = "first")
+    df_persons = pd.merge(df_persons, df_commute_distance_lookup, on = "person_id", how = "left")
 
     # For the ones without commuting distance, sample from the distribution.
     f_missing = df_persons["commute_distance"].isna()

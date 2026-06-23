@@ -51,8 +51,69 @@ WEEKDAY_MAP = {
     7: "saturday"
 }
 
+
 def convert_time(x):
     return np.dot(np.array(x.split(":"), dtype = float), [3600.0, 60.0, 1.0])
+
+
+def _map_weekday(series):
+    return pd.to_numeric(series, errors = "coerce").astype("Int64").map(WEEKDAY_MAP)
+
+
+def _infer_trip_weekday(df_trips, df_mobilite):
+    if "V2_JOUR_DEP" in df_trips:
+        weekday = _map_weekday(df_trips["V2_JOUR_DEP"])
+    else:
+        weekday = pd.Series(pd.NA, index = df_trips.index, dtype = "object")
+
+    weekday = weekday.astype("object")
+    weekday = weekday.where(df_trips["V2_TYPJOUR"] != 2, "saturday")
+    weekday = weekday.where(df_trips["V2_TYPJOUR"] != 3, "sunday")
+
+    if "V2_JOURSEMMOB" in df_mobilite:
+        df_primary_weekday = df_mobilite[["IDENT_IND", "V2_JOURSEMMOB"]].copy()
+        df_primary_weekday["weekday"] = _map_weekday(df_primary_weekday["V2_JOURSEMMOB"])
+        df_primary_weekday = df_primary_weekday.rename(columns = {"IDENT_IND": "entd_person_id"})
+
+        weekday = pd.merge(
+            df_trips[["entd_person_id", "V2_TYPJOUR"]],
+            df_primary_weekday[["entd_person_id", "weekday"]],
+            on = "entd_person_id", how = "left"
+        )["weekday"].where(df_trips["V2_TYPJOUR"] == 1, weekday)
+
+    # Reduced fixture data may omit explicit weekday columns entirely. Keep those
+    # observations available by assigning a stable placeholder weekday.
+    weekday = weekday.fillna("monday")
+
+    return weekday
+
+
+def _build_person_days(df_persons, df_trips, df_mobilite):
+    day_frames = [
+        df_trips[["entd_person_id", "weekday"]].dropna().drop_duplicates()
+    ]
+
+    df_weekday = df_mobilite[["IDENT_IND", "V2_JOURSEMMOB"]].copy()
+    df_weekday["weekday"] = _map_weekday(df_weekday["V2_JOURSEMMOB"])
+    df_weekday = df_weekday.rename(columns = {"IDENT_IND": "entd_person_id"})
+    day_frames.append(df_weekday[["entd_person_id", "weekday"]].dropna().drop_duplicates())
+
+    for column, weekday in (("V2_MDATESAMDEP", "saturday"), ("V2_MDATEDIMDEP", "sunday")):
+        if column not in df_mobilite:
+            continue
+
+        df_extra = df_mobilite.loc[df_mobilite[column].notna(), ["IDENT_IND"]].copy()
+        df_extra = df_extra.rename(columns = {"IDENT_IND": "entd_person_id"})
+        df_extra["weekday"] = weekday
+        day_frames.append(df_extra.drop_duplicates())
+
+    df_person_days = pd.concat(day_frames, ignore_index = True).drop_duplicates(["entd_person_id", "weekday"])
+    df_person_days = pd.merge(df_person_days, df_persons, on = "entd_person_id", how = "inner")
+    df_person_days = df_person_days.reset_index(drop = True)
+    df_person_days["person_id"] = np.arange(len(df_person_days))
+
+    return df_person_days
+
 
 def execute(context):
     df_individu, df_tcm_individu, df_menage, df_tcm_menage, df_deploc, df_mobilite = context.stage("data.hts.entd.raw")
@@ -67,10 +128,6 @@ def execute(context):
     df_persons["is_kish"] = ~df_persons["PONDKI"].isna()
     df_persons["trip_weight"] = df_persons["PONDKI"].fillna(0.0)
 
-    # ENTD can contain multiple reported diary days per responding person. We keep
-    # all of them here and collapse to one day later so downstream chain logic
-    # still works with a single daily chain per person.
-
     # Merge in additional information from ENTD
     df_households = pd.merge(df_households, df_menage[[
         "idENT_MEN", "V1_JNBVEH", "V1_JNBMOTO", "V1_JNBCYCLO", "V1_JNBVELOADT"
@@ -80,26 +137,19 @@ def execute(context):
         "IDENT_IND", "V1_GPERMIS", "V1_GPERMIS2R", "V1_ICARTABON"
     ]], on = "IDENT_IND", how = "left")
 
-    # Transform original IDs to integer (they are hierarchichal)
+    # Transform original IDs to integer (they are hierarchical)
     df_persons["entd_person_id"] = df_persons["IDENT_IND"].astype(int)
     df_persons["entd_household_id"] = df_persons["IDENT_MEN"].astype(int)
     df_households["entd_household_id"] = df_households["idENT_MEN"].astype(int)
     df_trips["entd_person_id"] = df_trips["IDENT_IND"].astype(int)
 
-    # Construct new IDs for households, persons and trips (which are unique globally)
+    # Construct new IDs for households first.
     df_households["household_id"] = np.arange(len(df_households))
 
     df_persons = pd.merge(
         df_persons, df_households[["entd_household_id", "household_id"]],
         on = "entd_household_id"
     )
-    df_persons["person_id"] = np.arange(len(df_persons))
-
-    df_trips = pd.merge(
-        df_trips, df_persons[["entd_person_id", "person_id", "household_id"]],
-        on = ["entd_person_id"]
-    )
-    df_trips["trip_id"] = np.arange(len(df_trips))
 
     # Weight
     df_persons["person_weight"] = df_persons["PONDV1"].astype(float)
@@ -175,6 +225,13 @@ def execute(context):
     df_households.loc[df_households["TrancheRevenuMensuel"].str.startswith("10 000"), "income_class"] = 13
     df_households["income_class"] = df_households["income_class"].astype(int)
 
+    # Calculate consumption units before duplicating persons into day observations.
+    hts.check_household_size(df_households, df_persons)
+    df_households = pd.merge(df_households, hts.calculate_consumption_units(df_persons), on = "household_id")
+
+    # Socioprofessional class
+    df_persons["socioprofessional_class"] = df_persons["CS24"].fillna(80).astype(int) // 10
+
     # Trip purpose
     df_trips["following_purpose"] = "other"
     df_trips["preceding_purpose"] = "other"
@@ -201,18 +258,20 @@ def execute(context):
     # Further trip attributes
     df_trips["routed_distance"] = df_trips["V2_MDISTTOT"] * 1000.0
     df_trips["routed_distance"] = df_trips["routed_distance"].fillna(0.0) # This should be just one within Ile-de-France
+    df_trips["weekday"] = _infer_trip_weekday(df_trips, df_mobilite)
 
-    # Only leave one day per person so downstream chain logic still works on a
-    # single daily chain per respondent.
-    initial_count = len(df_trips)
+    # Expand the ENTD respondents into day observations and map trips to those
+    # observations so downstream matching can select weekday/weekend chains.
+    df_persons = _build_person_days(df_persons, df_trips, df_mobilite)
+    df_persons["weekday"] = df_persons["weekday"].astype("category")
 
-    df_first_day = df_trips[["person_id", "IDENT_JOUR"]].sort_values(
-        by = ["person_id", "IDENT_JOUR"]
-    ).drop_duplicates("person_id")
-    df_trips = pd.merge(df_trips, df_first_day, how = "inner", on = ["person_id", "IDENT_JOUR"])
-
-    final_count = len(df_trips)
-    print("Removed %d trips for non-primary days" % (initial_count - final_count))
+    df_trips = pd.merge(
+        df_trips,
+        df_persons[["entd_person_id", "weekday", "person_id"]],
+        on = ["entd_person_id", "weekday"],
+        how = "inner"
+    )
+    df_trips["trip_id"] = np.arange(len(df_trips))
 
     # Trip flags
     df_trips = hts.compute_first_last(df_trips)
@@ -227,40 +286,26 @@ def execute(context):
     hts.compute_activity_duration(df_trips)
 
     # Add weight to trips
-    df_trips["trip_weight"] = df_trips["PONDKI"]
+    df_trips["trip_weight"] = df_trips["PONDKI"].fillna(0.0)
 
     # Chain length
     df_persons = pd.merge(
-        df_persons, df_trips[["person_id", "NDEP"]].drop_duplicates("person_id").rename(columns = { "NDEP": "number_of_trips" }),
+        df_persons,
+        df_trips.groupby("person_id").size().reset_index(name = "number_of_trips"),
         on = "person_id", how = "left"
     )
-    df_persons["number_of_trips"] = df_persons["number_of_trips"].fillna(-1).astype(int)
-    df_persons.loc[(df_persons["number_of_trips"] == -1) & df_persons["is_kish"], "number_of_trips"] = 0
+    df_persons["number_of_trips"] = df_persons["number_of_trips"].fillna(0).astype(int)
 
     # Passenger attribute
     df_persons["is_passenger"] = df_persons["person_id"].isin(
         df_trips[df_trips["mode"] == "car_passenger"]["person_id"].unique()
     )
 
-    # Calculate consumption units
-    hts.check_household_size(df_households, df_persons)
-    df_households = pd.merge(df_households, hts.calculate_consumption_units(df_persons), on = "household_id")
-
-    # Socioprofessional class
-    df_persons["socioprofessional_class"] = df_persons["CS24"].fillna(80).astype(int) // 10
-
-    # Weekday
-    df_weekday = df_mobilite.copy()
-    df_weekday = df_weekday.rename(columns = { "IDENT_IND": "entd_person_id" })
-    df_weekday["weekday"] = pd.to_numeric(df_weekday["V2_JOURSEMMOB"], errors = "coerce").astype("Int64").map(WEEKDAY_MAP).astype("category")
-    df_weekday = df_weekday.drop(columns = ["V2_JOURSEMMOB"])
-
-    df_persons = pd.merge(df_persons, df_weekday, how = "left", on = "entd_person_id")
-
     # Fix activity types (because of 1 inconsistent ENTD data)
     hts.fix_activity_types(df_trips)
 
     return df_households, df_persons, df_trips
+
 
 def calculate_income_class(df):
     assert "household_income" in df

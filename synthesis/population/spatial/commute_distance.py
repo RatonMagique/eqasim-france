@@ -11,13 +11,15 @@ def execute(context):
     df_work = pd.merge(
         df_matching[["person_id", "hts_person_id"]],
         df_commute_distance["work"][["person_id", "commute_distance"]].rename(columns = dict(person_id = "hts_person_id")),
-        how = "left"
+        how = "left",
+        validate = "many_to_one"
     )
 
     df_education = pd.merge(
         df_matching[["person_id", "hts_person_id"]],
         df_commute_distance["education"][["person_id", "commute_distance"]].rename(columns = dict(person_id = "hts_person_id")),
-        how = "left"
+        how = "left",
+        validate = "many_to_one"
     )
 
     assert len(df_work) == len(df_matching)
