@@ -41,6 +41,16 @@ MODES_MAP = [
 #    ("9", "pt") # Other
 ]
 
+WEEKDAY_MAP = {
+    1: "sunday",
+    2: "monday",
+    3: "tuesday",
+    4: "wednesday",
+    5: "thursday",
+    6: "friday",
+    7: "saturday"
+}
+
 def convert_time(x):
     return np.dot(np.array(x.split(":"), dtype = float), [3600.0, 60.0, 1.0])
 
@@ -57,11 +67,9 @@ def execute(context):
     df_persons["is_kish"] = ~df_persons["PONDKI"].isna()
     df_persons["trip_weight"] = df_persons["PONDKI"].fillna(0.0)
 
-    # Important: If someone did not have any trips on the reference day, ENTD asked
-    # for another day. With this flag we make sure that we only cover "reference days".
-    f = df_trips["V2_MOBILREF"] == 1
-    df_trips = df_trips[f]
-    print("Filtering out %d non-reference day trips" % np.count_nonzero(~f))
+    # ENTD can contain multiple reported diary days per responding person. We keep
+    # all of them here and collapse to one day later so downstream chain logic
+    # still works with a single daily chain per person.
 
     # Merge in additional information from ENTD
     df_households = pd.merge(df_households, df_menage[[
@@ -192,14 +200,10 @@ def execute(context):
 
     # Further trip attributes
     df_trips["routed_distance"] = df_trips["V2_MDISTTOT"] * 1000.0
-    df_trips["routed_distance"] = df_trips["routed_distance"].fillna(0.0) # This should be just one within Île-de-France
+    df_trips["routed_distance"] = df_trips["routed_distance"].fillna(0.0) # This should be just one within Ile-de-France
 
-    # Only leave weekday trips
-    f = df_trips["V2_TYPJOUR"] == 1
-    print("Removing %d trips on weekends" % np.count_nonzero(~f))
-    df_trips = df_trips[f]
-
-    # Only leave one day per person
+    # Only leave one day per person so downstream chain logic still works on a
+    # single daily chain per respondent.
     initial_count = len(df_trips)
 
     df_first_day = df_trips[["person_id", "IDENT_JOUR"]].sort_values(
@@ -248,9 +252,7 @@ def execute(context):
     # Weekday
     df_weekday = df_mobilite.copy()
     df_weekday = df_weekday.rename(columns = { "IDENT_IND": "entd_person_id" })
-    df_weekday["weekday"] = df_weekday["V2_JOURSEMMOB"].replace({
-        2: "monday", 3: "tuesday", 4: "wednesday", 5: "thursday", 6: "friday"
-    }).astype("category")
+    df_weekday["weekday"] = pd.to_numeric(df_weekday["V2_JOURSEMMOB"], errors = "coerce").astype("Int64").map(WEEKDAY_MAP).astype("category")
     df_weekday = df_weekday.drop(columns = ["V2_JOURSEMMOB"])
 
     df_persons = pd.merge(df_persons, df_weekday, how = "left", on = "entd_person_id")

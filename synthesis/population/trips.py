@@ -34,6 +34,17 @@ def execute(context):
         
     df_trips = df_trips.sort_values(by = ["person_id", "trip_id"])
 
+    if len(df_trips) == 0:
+        df_trips["trip_index"] = pd.Series(dtype = int)
+        return df_trips[[
+            "person_id", "trip_index",
+            "departure_time", "arrival_time",
+            "preceding_purpose", "following_purpose",
+            "is_first_trip", "is_last_trip",
+            "trip_duration", "activity_duration",
+            "mode"
+        ]]
+
     # Define trip index
     df_count = df_trips.groupby("person_id").size().reset_index(name = "count")
     df_trips["trip_index"] = np.hstack([np.arange(count) for count in df_count["count"].values])

@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import itertools
 import numpy as np
 import pandas as pd
@@ -7,7 +6,6 @@ import numba
 import data.hts.egt.cleaned
 import data.hts.entd.cleaned
 
-import multiprocessing as mp
 
 """
 This stage attaches obervations from the household travel survey to the synthetic
@@ -34,8 +32,9 @@ def configure(context):
     context.stage("synthesis.population.sampled")
     context.stage("synthesis.population.income.selected")
 
-    hts = context.config("hts")
+    context.config("hts")
     context.stage("data.hts.selected", alias = "hts")
+    context.stage("data.hts.selected", dict(weekday = "any"), alias = "hts_reference")
 
 @numba.jit(nopython = True) # Already parallelized parallel = True)
 def sample_indices(uniform, cdf, selected_indices):
@@ -101,6 +100,9 @@ def statistical_matching(progress, df_source, source_identifier, weight, df_targ
                     continue
 
                 selected_weights = weights[f_source]
+                if len(selected_weights) == 0:
+                    continue
+
                 cdf = np.cumsum(selected_weights)
                 cdf /= cdf[-1]
 
@@ -111,6 +113,9 @@ def statistical_matching(progress, df_source, source_identifier, weight, df_targ
                 progress.update(int(np.count_nonzero(f_target)))
 
     # Randomly assign unmatched observations
+    if len(weights) == 0:
+        raise RuntimeError("No source observations available for statistical matching.")
+
     cdf = np.cumsum(weights)
     cdf /= cdf[-1]
 
@@ -172,7 +177,7 @@ def execute(context):
     hts = context.config("hts")
 
     # Load data
-    df_source_households, df_source_persons, df_source_trips = context.stage("hts")
+    df_source_households, df_source_persons, df_source_trips = context.stage("hts_reference")
     df_source = pd.merge(df_source_persons, df_source_households)
 
     df_target = context.stage("synthesis.population.sampled")
@@ -185,7 +190,8 @@ def execute(context):
     try:
         default_index = columns.index("*default*")
         columns[default_index:default_index + 1] = DEFAULT_MATCHING_ATTRIBUTES
-    except ValueError: pass
+    except ValueError:
+        pass
 
     # Define matching attributes
     AGE_BOUNDARIES = [14, 29, 44, 59, 74, 1000]
@@ -208,10 +214,10 @@ def execute(context):
     df_source = df_source.rename(columns = { "person_id": "hts_person_id" })
 
     for column in columns:
-        if not column in df_source:
+        if column not in df_source:
             raise RuntimeError("Attribute not available in source (HTS) for matching: {}".format(column))
 
-        if not column in df_target:
+        if column not in df_target:
             raise RuntimeError("Attribute not available in target (census) for matching: {}".format(column))
 
     df_assignment, levels = parallel_statistical_matching(
