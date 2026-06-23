@@ -19,20 +19,32 @@ def configure(context):
 
     context.config("weekday", "any")
 
+def weekday_selection(weekday):
+    if isinstance(weekday, str):
+        if weekday == "any":
+            return None
+        if weekday == "weekend":
+            return ["saturday", "sunday"]
+        if weekday == "weekday":
+            return ["monday", "tuesday", "wednesday", "thursday", "friday"]
+    if isinstance(weekday, list[str]):
+        possible_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        if set(weekday).issubset(set(possible_days)):
+            return weekday
+        else:
+            raise RuntimeError("Invalid weekday selection: %s" % weekday)
+    
 def execute(context):
     df_households, df_persons, df_trips = context.stage("hts")
 
     # weekday filtering
-    weekday = context.config("weekday")
-    if weekday != "any":
+    weekday = weekday_selection(context.config("weekday"))
+    if weekday is not None:
         if "weekday" not in df_persons:
             raise RuntimeError("The weekday attribute has not been implemented yet for your selected survey. Cannot perform chain matching by weekday.")
 
         # select persons by weekday
-        if isinstance(weekday, str):
-            df_persons = df_persons[df_persons["weekday"] == weekday].copy()
-        else:
-            df_persons = df_persons[df_persons["weekday"].isin(weekday)].copy()
+        df_persons = df_persons[df_persons["weekday"].isin(weekday)].copy()
 
         if len(df_persons) == 0:
             raise RuntimeError("No HTS observations available for weekday selection %s in survey '%s'." % (
