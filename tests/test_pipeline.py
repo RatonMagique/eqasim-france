@@ -84,6 +84,27 @@ def test_population_with_egt(data_path, tmpdir):
     run_population(data_path, tmpdir, "egt")
 
 
+def test_population_with_default_mode_kept(data_path, tmpdir):
+    cache_path = str(tmpdir.mkdir("cache"))
+    output_path = str(tmpdir.mkdir("output"))
+
+    config = dict(
+        data_path = data_path, output_path = output_path,
+        regions = [10, 11], sampling_rate = 1.0, hts = "entd",
+        random_seed = 1000, processes = 1,
+        secondary_activities = dict(maximum_iterations = 10),
+        maven_skip_tests = True,
+        keep_default_mode = True,
+    )
+
+    synpp.run([
+        dict(descriptor = "synthesis.output"),
+    ], config, working_directory = cache_path)
+
+    df = pd.read_csv("%s/ile_de_france_trips.csv" % output_path, sep = ";", nrows = 1)
+    assert "mode" in df
+
+
 def test_population_with_mode_choice(data_path, tmpdir):
     run_population(data_path, tmpdir, "entd", { "mode_choice": True })
 

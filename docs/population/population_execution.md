@@ -129,7 +129,7 @@ config:
   mode_choice: true
 ```
 
-Running the pipeline again will add the `mode` colum to the `trips.csv` file and its spatial equivalent.
+If you want to keep the survey-derived fallback mode, set `keep_default_mode: true`. This mode is as good as it gets without MATSim-based mode choice. If `mode_choice` is enabled, the MATSim-based mode choice result overwrites the survey-derived mode.
 
 ### Population projections
 

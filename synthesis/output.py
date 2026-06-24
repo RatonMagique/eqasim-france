@@ -28,6 +28,9 @@ def configure(context):
     context.config("output_location_ids", False)
     context.config("extra_enriched_attributes", [])
     context.config("census_attributes", [])
+    # Keep the survey-derived mode only as a fallback. It is the best available
+    # estimate without MATSim-based mode choice.
+    context.config("keep_default_mode", False)
 
     if context.config("mode_choice", False):
         context.stage("matsim.simulation.prepare")
@@ -171,13 +174,17 @@ def execute(context):
     df_trips["preceding_activity_index"] = df_trips["trip_index"]
     df_trips["following_activity_index"] = df_trips["trip_index"] + 1
 
-    df_trips = df_trips[[
+    df_trips_columns = [
         "person_id", "trip_index",
         "preceding_activity_index", "following_activity_index",
         "departure_time", "arrival_time",
         "preceding_purpose", "following_purpose",
         "is_first", "is_last"
-    ]]
+    ]
+    if context.config("keep_default_mode"):
+        df_trips_columns.append("mode")
+
+    df_trips = df_trips[df_trips_columns]
 
     if context.config("mode_choice"):
         trips_path = "%s/mode_choice/output_trips.csv" % context.path("matsim.simulation.prepare")

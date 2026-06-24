@@ -91,7 +91,10 @@ config:
   # income_assignation_method: bhepop2 # uniform, bhepop2
 
   ## Activate if you want to run mode choice, will assign a mode to output trips
-  mode_choice: true
+  # mode_choice: true
+
+  ## Activate if you want to preserve the mode of transport from the HTS. This will not be as accurate as the mode choice.
+  # keep_default_mode: true
 
   ## Census data
   # It is possible to pipe raw per-person or per-household data from the census to the generated persons:
