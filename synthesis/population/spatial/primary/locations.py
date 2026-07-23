@@ -68,6 +68,8 @@ def process_municipality(context, origin_id):
     return df_candidates[["person_id", "commune_id", "location_id", "geometry"]]
 
 def process(context, purpose, df_persons, df_candidates):
+    if df_persons.empty:
+        return pd.DataFrame(columns=["person_id", "commune_id", "location_id", "geometry"])
     unique_ids = df_candidates["origin_id"].unique()
 
     df_result = []

@@ -83,6 +83,10 @@ def sample_locations(context, arguments):
 
 def process(context, purpose, random, df_persons, df_od, df_locations,step_name):
     df_persons = df_persons[df_persons["has_%s_trip" % purpose]]
+    # A population subset may legitimately contain no trips for a purpose.
+    # Return the expected schema instead of concatenating an empty result list.
+    if df_persons.empty:
+        return pd.DataFrame(columns=["origin_id", "destination_id", "location_id"])
 
     # Sample commute flows based on population
     df_demand = df_persons.groupby("commune_id",observed=False).size().reset_index(name = "count")
