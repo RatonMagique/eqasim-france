@@ -43,6 +43,7 @@ def execute(context):
 
     # Spatial information
     df["departement_id"] = df["DEPT"].astype("category")
+    df["region_id"] = df["REGION"].astype("category")
 
     df["commune_id"] = df["IRIS"].str[:5]
     f_undefined = df["commune_id"].str.contains("Z")
@@ -150,7 +151,7 @@ def execute(context):
     # additional attributes
     selected_attributes = [
         "person_id", "household_id", "weight",
-        "iris_id", "commune_id", "departement_id",
+        "iris_id", "commune_id", "departement_id", "region_id",
         "age", "sex", "couple",
         "professional_activity",
         "commute_mode", "employed", "studies",

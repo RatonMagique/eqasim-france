@@ -98,6 +98,8 @@ config:
 
   ## Census data
   # It is possible to pipe raw per-person or per-household data from the census to the generated persons:
+  # Synthesize IRIS without individual census microdata from department/region donors.
+  # census_missing_iris_strategy: department_region_donors
 
   # census_attributes:
   # - name: household_type
@@ -174,7 +176,6 @@ config:
 
   ## performing one run of the matsim simulation or not
   # run_matsim: true
-
   ## creating the far or not
   # write_jar: true
 

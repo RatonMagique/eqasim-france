@@ -10,6 +10,7 @@ def configure(context):
 
     context.config("data_path")
     context.config("census_path", "rp_2022/RP2022_indcvi.parquet")
+    context.config("census_missing_iris_strategy", "error")
 
     context.config("census_attributes", [])
 
@@ -39,7 +40,8 @@ def execute(context):
 
     requested_iris = df_codes["iris_id"].unique()
     requested_communes = df_codes["commune_id"].unique()
-    requested_departements = df_codes["departement_id"].unique()
+    requested_departements = df_codes["departement_id"].astype(str).unique()
+    requested_regions = df_codes["region_id"].astype(str).unique()
     census_attributes = { attribute["raw"] for attribute in context.config("census_attributes") }
 
     with context.progress(label = "Reading census ...") as progress:
@@ -47,7 +49,11 @@ def execute(context):
                         columns=COLUMNS | census_attributes)
 
         parquet = parquet.cast(pl.String)
-        if len(requested_iris) > 0:
+        if context.config("census_missing_iris_strategy") == "department_region_donors":
+            # Keep a regional donor pool available. The completion stage first
+            # uses the target department and only expands when necessary.
+            parquet = parquet.filter(pl.col("REGION").is_in(requested_regions))
+        elif len(requested_iris) > 0:
             parquet = parquet.filter(pl.col("IRIS").is_in(requested_iris))
         elif len(requested_communes) > 0:
             parquet = parquet.filter(pl.col("IRIS").str.slice(0, 5).is_in(requested_communes))
@@ -56,6 +62,13 @@ def execute(context):
 
         progress.update(len(parquet))
 
+
+    if len(parquet) == 0:
+        raise RuntimeError(
+            "No individual census records match the requested spatial codes. "
+            "Use census_missing_iris_strategy=department_region_donors to "
+            "synthesize missing IRIS from a donor pool."
+        )
 
     return parquet.to_pandas()
 
