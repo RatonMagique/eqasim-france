@@ -97,3 +97,14 @@ def test_missing_iris_escalates_to_region_when_department_has_no_donors():
 
     assert set(result["departement_id"].astype(str)) == {"11"}
     assert context.info["fallback"]["110020000"]["source_scope"] == "region"
+
+
+def test_donor_sampling_handles_read_only_weight_arrays():
+    census = pd.concat([_census()] * 60, ignore_index=True)
+    census["household_id"] = list(range(len(census) // 2)) * 2
+    census = census.sort_values("household_id").reset_index(drop=True)
+
+    selected = completed._select_donors(census, maximum=10, random_seed=1234, iris_id="100020000")
+
+    assert len(selected) == 10
+    assert len(set(selected)) == 10

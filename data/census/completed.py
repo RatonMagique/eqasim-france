@@ -52,7 +52,7 @@ def _select_donors(df, maximum, random_seed, iris_id):
     households = _households(df)
     if len(households) <= maximum:
         return households["household_id"].to_numpy()
-    probabilities = households["weight"].to_numpy(dtype=float)
+    probabilities = households["weight"].to_numpy(dtype=float, copy=True)
     probabilities /= probabilities.sum()
     seed = (random_seed + zlib.crc32(str(iris_id).encode())) % (2**32)
     random = np.random.default_rng(seed)
