@@ -4,7 +4,11 @@ import numpy as np
 def configure(context):
     context.config("random_seed")
     context.stage("data.hts.selected")
-    context.stage("data.hts.selected", dict(weekday = "any"), alias = "hts_reference")
+    # A feeder/department-level HTS subset can contain no observations for a
+    # primary purpose (notably education in sparsely sampled departments).
+    # Keep the selected stage for matching observed persons, but learn the
+    # fallback distribution from the complete survey.
+    context.stage("data.hts.selected", dict(weekday = "any", filter_hts = False), alias = "hts_reference")
 
 def _build_distribution(df_persons, df_trips, activity_type):
     if "euclidean_distance" in df_trips:
