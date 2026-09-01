@@ -99,6 +99,21 @@ def test_missing_iris_escalates_to_region_when_department_has_no_donors():
     assert context.info["fallback"]["110020000"]["source_scope"] == "region"
 
 
+def test_missing_zero_population_iris_does_not_create_nan_weighted_households():
+    context = _context("department_region_donors")
+    context.stages["data.spatial.population"]["population"] = 0.0
+
+    result = completed.execute(context)
+
+    assert result.empty
+    assert context.info["fallback"]["100020000"] == {
+        "source_scope": None,
+        "target_population": 0.0,
+        "weighted_population": 0.0,
+        "residuals": {},
+    }
+
+
 def test_donor_sampling_handles_read_only_weight_arrays():
     census = pd.concat([_census()] * 60, ignore_index=True)
     census["household_id"] = list(range(len(census) // 2)) * 2

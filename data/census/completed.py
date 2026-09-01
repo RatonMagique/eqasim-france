@@ -147,7 +147,20 @@ def execute(context):
         known = set(targets["iris_id"].astype(str))
         raise RuntimeError("Aggregate population is missing requested IRIS: %s" % sorted(set(missing) - known))
 
+    # An IRIS can be present in the spatial selection while having no residents.
+    # It needs no synthetic donor households; trying to calibrate one would
+    # initialise all weights to zero and subsequently normalise 0 / 0.
+    empty_targets = targets[targets["population"] <= 0]
+    targets = targets[targets["population"] > 0]
+
     fallback, diagnostics = [], {}
+    for _, target in empty_targets.sort_values("iris_id").iterrows():
+        diagnostics[str(target["iris_id"])] = {
+            "source_scope": None,
+            "target_population": float(target["population"]),
+            "weighted_population": 0.0,
+            "residuals": {},
+        }
     next_household_id = int(census["household_id"].max()) + 1 if len(census) else 0
     for _, target in targets.sort_values("iris_id").iterrows():
         department = census[census["departement_id"].astype(str) == str(target["departement_id"])]
