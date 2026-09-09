@@ -28,6 +28,7 @@ def configure(context):
     context.config("output_location_ids", False)
     context.config("extra_enriched_attributes", [])
     context.config("census_attributes", [])
+    context.config("weekday", "any")
     # Keep the survey-derived mode only as a fallback. It is the best available
     # estimate without MATSim-based mode choice.
     context.config("keep_default_mode", False)
@@ -266,25 +267,35 @@ def execute(context):
         path = "%s/%shomes.geoparquet" % (output_path, output_prefix)
         df_spatial_homes.to_parquet(path)
 
-    # Write spatial commutes
-    df_spatial = pd.merge(
-        df_spatial[df_spatial["purpose"] == "home"].drop_duplicates("person_id")[["person_id", "geometry"] + location_column].rename(columns = { "geometry": "home_geometry", "location_id": "home_location_id" }),
-        df_spatial[df_spatial["purpose"] == "work"].drop_duplicates("person_id")[["person_id", "geometry"] + location_column].rename(columns = { "geometry": "work_geometry", "location_id": "work_location_id" })
+    # Write spatial commutes. Weekend-only chains commonly contain no work
+    # activities; commute exports represent home-to-work lines and therefore
+    # do not apply to those runs.
+    weekday = context.config("weekday")
+    is_weekend_only = weekday == "weekend" or (
+        isinstance(weekday, list) and bool(weekday) and
+        set(weekday).issubset({"saturday", "sunday"})
     )
 
-    df_spatial["geometry"] = gpd.GeoSeries([
-        geo.LineString(od)
-        for od in zip(df_spatial["home_geometry"], df_spatial["work_geometry"])
-    ], crs = df_locations.crs)
+    if not is_weekend_only:
+        df_spatial = pd.merge(
+            df_spatial[df_spatial["purpose"] == "home"].drop_duplicates("person_id")[["person_id", "geometry"] + location_column].rename(columns = { "geometry": "home_geometry", "location_id": "home_location_id" }),
+            df_spatial[df_spatial["purpose"] == "work"].drop_duplicates("person_id")[["person_id", "geometry"] + location_column].rename(columns = { "geometry": "work_geometry", "location_id": "work_location_id" })
+        )
 
-    df_spatial = df_spatial.drop(columns = ["home_geometry", "work_geometry"])
-    if "gpkg" in output_formats:
-        path = "%s/%scommutes.gpkg" % (output_path, output_prefix)
-        df_spatial.to_file(path, driver = "GPKG")
-        clean_gpkg(path)
-    if "geoparquet" in output_formats:
-        path = "%s/%scommutes.geoparquet" % (output_path, output_prefix)
-        df_spatial.to_parquet(path)
+        if not df_spatial.empty:
+            df_spatial["geometry"] = gpd.GeoSeries([
+                geo.LineString(od)
+                for od in zip(df_spatial["home_geometry"], df_spatial["work_geometry"])
+            ], crs = df_locations.crs)
+
+            df_spatial = df_spatial.drop(columns = ["home_geometry", "work_geometry"])
+            if "gpkg" in output_formats:
+                path = "%s/%scommutes.gpkg" % (output_path, output_prefix)
+                df_spatial.to_file(path, driver = "GPKG")
+                clean_gpkg(path)
+            if "geoparquet" in output_formats:
+                path = "%s/%scommutes.geoparquet" % (output_path, output_prefix)
+                df_spatial.to_parquet(path)
 
     # Write spatial trips
     df_spatial = pd.merge(df_trips, df_locations[[
