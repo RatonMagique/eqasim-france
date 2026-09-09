@@ -4,7 +4,6 @@ import os
 import geopandas as gpd
 import py7zr
 import glob
-import numpy as np
 
 """
 This stage loads the raw data from the French building registry (BD-TOPO).
@@ -99,8 +98,21 @@ def execute(context):
 
     df_bdtopo = pd.concat(df_bdtopo)
 
-    for department_id in df_departments["departement_id"].values:
-        assert np.count_nonzero(df_bdtopo["department_id"] == department_id) > 0
+    available_departments = set(df_bdtopo["department_id"].unique())
+    empty_departments = [
+        department_id
+        for department_id in df_departments["departement_id"].unique()
+        if department_id not in available_departments
+    ]
+
+    if empty_departments:
+        print(
+            "Warning: no residential BD-TOPO buildings remain after spatial "
+            "filtering for department(s): {}. Continuing with the buildings "
+            "available in the selected area.".format(
+                ", ".join(map(str, empty_departments))
+            )
+        )
 
     return df_bdtopo[["building_id", "housing", "geometry"]]
 
